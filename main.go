@@ -62,7 +62,7 @@ func runClientCommand(args []string) error {
 	fs.StringVar(&cfg.User, "user", "", "required inbound SSH username; empty accepts any user")
 	fs.StringVar(&password, "password", "", "inbound SSH password")
 	fs.StringVar(&authorizedKeys, "authorized-keys", "", "OpenSSH authorized_keys file for inbound public key auth")
-	fs.StringVar(&hostKey, "host-key", "", "private host key for the inbound SSH server")
+	fs.StringVar(&hostKey, "host-key", "", "private host key for the inbound SSH server; empty uses ~/.ssh2tcp/host_key and generates it if missing")
 	fs.DurationVar(&cfg.ConnectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the plain ssh2tcp server")
 
 	if err := fs.Parse(args); err != nil {
@@ -71,10 +71,6 @@ func runClientCommand(args []string) error {
 	if cfg.ServerAddress == "" {
 		return errors.New("client requires -server")
 	}
-	if hostKey == "" {
-		return errors.New("client requires -host-key")
-	}
-
 	sshConfig, err := buildInboundSSHServerConfig(cfg.User, password, authorizedKeys, hostKey)
 	if err != nil {
 		return err

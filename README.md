@@ -57,9 +57,13 @@ ssh2tcp client `
   -listen :2222 `
   -server 127.0.0.1:9000 `
   -user tunnel-user `
-  -password tunnel-password `
-  -host-key C:\path\to\ssh2tcp_host_key
+  -password tunnel-password
 ```
+
+If `-host-key` is omitted, `ssh2tcp client` loads the host key from
+`~/.ssh2tcp/host_key`. If that file does not exist, it generates a new Ed25519
+host key and saves it there. You can still pass `-host-key` to use an explicit
+private key file.
 
 Then connect through it:
 

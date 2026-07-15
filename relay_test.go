@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -42,6 +43,40 @@ func TestHostKeyCallbackRejectsWrongFingerprint(t *testing.T) {
 	}
 	if err := callback("target", nil, signer.PublicKey()); err == nil {
 		t.Fatal("wrong fingerprint accepted")
+	}
+}
+
+func TestLoadInboundHostKeyCreatesAndReusesDefaultKey(t *testing.T) {
+	oldUserHomeDir := userHomeDir
+	t.Cleanup(func() { userHomeDir = oldUserHomeDir })
+	home := t.TempDir()
+	userHomeDir = func() (string, error) {
+		return home, nil
+	}
+
+	firstSigner, path, created, err := loadInboundHostKey("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("default host key was not created")
+	}
+	if path != filepath.Join(home, defaultHostKeyPath) {
+		t.Fatalf("host key path = %q, want %q", path, filepath.Join(home, defaultHostKeyPath))
+	}
+
+	secondSigner, secondPath, created, err := loadInboundHostKey("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("existing default host key was recreated")
+	}
+	if secondPath != path {
+		t.Fatalf("second host key path = %q, want %q", secondPath, path)
+	}
+	if !bytes.Equal(firstSigner.PublicKey().Marshal(), secondSigner.PublicKey().Marshal()) {
+		t.Fatal("reloaded host key does not match generated key")
 	}
 }
 
