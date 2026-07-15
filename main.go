@@ -57,12 +57,14 @@ func runClientCommand(args []string) error {
 
 	var cfg clientConfig
 	var password, authorizedKeys, hostKey string
+	var xorKey int
 	fs.StringVar(&cfg.ListenAddress, "listen", ":2222", "SSH listen address")
 	fs.StringVar(&cfg.ServerAddress, "server", "", "plain ssh2tcp server address")
 	fs.StringVar(&cfg.User, "user", "", "required inbound SSH username; empty accepts any user")
 	fs.StringVar(&password, "password", "", "inbound SSH password")
 	fs.StringVar(&authorizedKeys, "authorized-keys", "", "OpenSSH authorized_keys file for inbound public key auth")
 	fs.StringVar(&hostKey, "host-key", "", "private host key for the inbound SSH server; empty uses ~/.ssh2tcp/host_key and generates it if missing")
+	fs.IntVar(&xorKey, "xor", 0, "XOR key for every byte on the plain TCP relay, 1-255 enables and 0 disables")
 	fs.DurationVar(&cfg.ConnectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the plain ssh2tcp server")
 
 	if err := fs.Parse(args); err != nil {
@@ -71,6 +73,12 @@ func runClientCommand(args []string) error {
 	if cfg.ServerAddress == "" {
 		return errors.New("client requires -server")
 	}
+	relayXORKey, err := parseXORKey(xorKey)
+	if err != nil {
+		return err
+	}
+	cfg.XORKey = relayXORKey
+
 	sshConfig, err := buildInboundSSHServerConfig(cfg.User, password, authorizedKeys, hostKey)
 	if err != nil {
 		return err
@@ -86,6 +94,7 @@ func runServerCommand(args []string) error {
 	var cfg serverConfig
 	var password, keyPath, knownHosts, hostKeyFingerprint string
 	var insecureHostKey bool
+	var xorKey int
 	fs.StringVar(&cfg.ListenAddress, "listen", ":9000", "plain ssh2tcp listen address")
 	fs.StringVar(&cfg.TargetAddress, "ssh-target", "", "target SSH server address")
 	fs.StringVar(&cfg.TargetUser, "ssh-user", "", "target SSH username")
@@ -94,6 +103,7 @@ func runServerCommand(args []string) error {
 	fs.StringVar(&knownHosts, "known-hosts", "", "known_hosts file for target host key verification")
 	fs.StringVar(&hostKeyFingerprint, "host-key-fingerprint", "", "trusted target SSH host key fingerprint, for example SHA256:...")
 	fs.BoolVar(&insecureHostKey, "insecure-skip-host-key-check", false, "disable target SSH host key verification")
+	fs.IntVar(&xorKey, "xor", 0, "XOR key for every byte on the plain TCP relay, 1-255 enables and 0 disables")
 	fs.DurationVar(&cfg.ConnectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the target SSH server")
 
 	if err := fs.Parse(args); err != nil {
@@ -105,6 +115,11 @@ func runServerCommand(args []string) error {
 	if cfg.TargetUser == "" {
 		return errors.New("server requires -ssh-user")
 	}
+	relayXORKey, err := parseXORKey(xorKey)
+	if err != nil {
+		return err
+	}
+	cfg.XORKey = relayXORKey
 
 	sshConfig, err := buildOutboundSSHClientConfig(cfg.TargetUser, password, keyPath, knownHosts, hostKeyFingerprint, insecureHostKey, cfg.ConnectTimeout)
 	if err != nil {
@@ -112,4 +127,11 @@ func runServerCommand(args []string) error {
 	}
 	cfg.SSHConfig = sshConfig
 	return serveServer(cfg)
+}
+
+func parseXORKey(value int) (byte, error) {
+	if value < 0 || value > 255 {
+		return 0, fmt.Errorf("-xor must be between 0 and 255, got %d", value)
+	}
+	return byte(value), nil
 }

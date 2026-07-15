@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	frameHello = "ssh2tcp-conn-layer-v1\n"
-	maxFrame   = 64 * 1024 * 1024
+	maxFrame = 64 * 1024 * 1024
 )
 
 const (
@@ -37,33 +36,16 @@ type frame interface {
 
 type frameStream struct {
 	conn    net.Conn
+	xorKey  byte
 	writeMu sync.Mutex
 }
 
-func newFrameStream(conn net.Conn) *frameStream {
-	return &frameStream{conn: conn}
+func newFrameStream(conn net.Conn, xorKey byte) *frameStream {
+	return &frameStream{conn: conn, xorKey: xorKey}
 }
 
 func (s *frameStream) Close() error {
 	return s.conn.Close()
-}
-
-func (s *frameStream) writeHello() error {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	_, err := s.conn.Write([]byte(frameHello))
-	return err
-}
-
-func (s *frameStream) readHello() error {
-	buf := make([]byte, len(frameHello))
-	if _, err := io.ReadFull(s.conn, buf); err != nil {
-		return err
-	}
-	if string(buf) != frameHello {
-		return fmt.Errorf("unexpected relay protocol hello %q", string(buf))
-	}
-	return nil
 }
 
 func (s *frameStream) writeFrame(f frame) error {
@@ -77,13 +59,18 @@ func (s *frameStream) writeFrame(f frame) error {
 
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(payload.Len()))
+	payloadBytes := payload.Bytes()
 
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	if s.xorKey != 0 {
+		xorBytes(header[:], s.xorKey)
+		xorBytes(payloadBytes, s.xorKey)
+	}
 	if _, err := s.conn.Write(header[:]); err != nil {
 		return err
 	}
-	_, err := s.conn.Write(payload.Bytes())
+	_, err := s.conn.Write(payloadBytes)
 	return err
 }
 
@@ -91,6 +78,9 @@ func (s *frameStream) readFrame() (frame, error) {
 	var header [4]byte
 	if _, err := io.ReadFull(s.conn, header[:]); err != nil {
 		return nil, err
+	}
+	if s.xorKey != 0 {
+		xorBytes(header[:], s.xorKey)
 	}
 
 	size := binary.BigEndian.Uint32(header[:])
@@ -101,6 +91,9 @@ func (s *frameStream) readFrame() (frame, error) {
 	payload := make([]byte, size)
 	if _, err := io.ReadFull(s.conn, payload); err != nil {
 		return nil, err
+	}
+	if s.xorKey != 0 {
+		xorBytes(payload, s.xorKey)
 	}
 
 	reader := bytes.NewReader(payload)
@@ -114,6 +107,12 @@ func (s *frameStream) readFrame() (frame, error) {
 		return nil, err
 	}
 	return f, nil
+}
+
+func xorBytes(data []byte, key byte) {
+	for i := range data {
+		data[i] ^= key
+	}
 }
 
 type globalRequestFrame struct {

@@ -16,11 +16,15 @@ import (
 )
 
 func TestRelaySupportsMultipleChannelsWithPasswordAuth(t *testing.T) {
-	runRelayEndToEnd(t, false)
+	runRelayEndToEnd(t, false, 0)
 }
 
 func TestRelaySupportsMultipleChannelsWithPublicKeyAuth(t *testing.T) {
-	runRelayEndToEnd(t, true)
+	runRelayEndToEnd(t, true, 0)
+}
+
+func TestRelaySupportsMultipleChannelsWithXOR(t *testing.T) {
+	runRelayEndToEnd(t, false, 63)
 }
 
 func TestHostKeyCallbackAcceptsTrustedFingerprint(t *testing.T) {
@@ -80,7 +84,7 @@ func TestLoadInboundHostKeyCreatesAndReusesDefaultKey(t *testing.T) {
 	}
 }
 
-func runRelayEndToEnd(t *testing.T, usePublicKey bool) {
+func runRelayEndToEnd(t *testing.T, usePublicKey bool, xorKey byte) {
 	t.Helper()
 
 	targetSigner := testSigner(t)
@@ -113,6 +117,7 @@ func runRelayEndToEnd(t *testing.T, usePublicKey bool) {
 		TargetAddress:  targetListener.Addr().String(),
 		TargetUser:     "target",
 		SSHConfig:      targetClientConfig,
+		XORKey:         xorKey,
 		ConnectTimeout: 5 * time.Second,
 	}
 	var plainWG sync.WaitGroup
@@ -143,6 +148,7 @@ func runRelayEndToEnd(t *testing.T, usePublicKey bool) {
 		ServerAddress:  plainListener.Addr().String(),
 		User:           "inbound",
 		SSHConfig:      inboundServerConfig,
+		XORKey:         xorKey,
 		ConnectTimeout: 5 * time.Second,
 	}
 	var inboundWG sync.WaitGroup

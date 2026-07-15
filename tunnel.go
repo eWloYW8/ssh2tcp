@@ -16,6 +16,7 @@ type clientConfig struct {
 	ServerAddress  string
 	User           string
 	SSHConfig      *ssh.ServerConfig
+	XORKey         byte
 	ConnectTimeout time.Duration
 }
 
@@ -24,6 +25,7 @@ type serverConfig struct {
 	TargetAddress  string
 	TargetUser     string
 	SSHConfig      *ssh.ClientConfig
+	XORKey         byte
 	ConnectTimeout time.Duration
 }
 
@@ -85,7 +87,7 @@ func handleInboundSSH(conn net.Conn, cfg clientConfig) error {
 	defer plain.Close()
 
 	log.Printf("accepted SSH %s as %q; plain relay %s", sshConn.RemoteAddr(), sshConn.User(), plain.RemoteAddr())
-	return relaySSHConnection(sshConn, chans, reqs, plain, relayClientSide)
+	return relaySSHConnection(sshConn, chans, reqs, plain, relayClientSide, cfg.XORKey)
 }
 
 func handlePlainRelay(conn net.Conn, cfg serverConfig) error {
@@ -104,7 +106,7 @@ func handlePlainRelay(conn net.Conn, cfg serverConfig) error {
 	defer sshConn.Close()
 
 	log.Printf("accepted plain %s; target SSH %s", conn.RemoteAddr(), sshConn.RemoteAddr())
-	return relaySSHConnection(sshConn, chans, reqs, conn, relayServerSide)
+	return relaySSHConnection(sshConn, chans, reqs, conn, relayServerSide, cfg.XORKey)
 }
 
 type relaySide int
@@ -147,12 +149,12 @@ type proxiedChannel struct {
 	ch ssh.Channel
 }
 
-func relaySSHConnection(sshConn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, plain net.Conn, side relaySide) error {
+func relaySSHConnection(sshConn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-chan *ssh.Request, plain net.Conn, side relaySide, xorKey byte) error {
 	r := &relay{
 		sshConn:             sshConn,
 		chans:               chans,
 		reqs:                reqs,
-		stream:              newFrameStream(plain),
+		stream:              newFrameStream(plain, xorKey),
 		nextChanID:          side.firstChannelID(),
 		nextReqID:           side.firstChannelID(),
 		channels:            make(map[uint64]*proxiedChannel),
@@ -160,13 +162,6 @@ func relaySSHConnection(sshConn ssh.Conn, chans <-chan ssh.NewChannel, reqs <-ch
 		pendingGlobalReqs:   make(map[uint64]chan globalRequestResult),
 		pendingChannelReqs:  make(map[uint64]chan channelRequestResult),
 		done:                make(chan struct{}),
-	}
-
-	if err := r.stream.writeHello(); err != nil {
-		return err
-	}
-	if err := r.stream.readHello(); err != nil {
-		return err
 	}
 
 	errCh := make(chan error, 3)

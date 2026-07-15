@@ -35,7 +35,8 @@ ssh2tcp server `
   -ssh-target 127.0.0.1:22 `
   -ssh-user target-user `
   -key C:\Users\you\.ssh\id_ed25519 `
-  -known-hosts C:\Users\you\.ssh\known_hosts
+  -known-hosts C:\Users\you\.ssh\known_hosts `
+  -xor 63
 ```
 
 You can pin the target SSH host key with a fingerprint instead of a
@@ -57,13 +58,18 @@ ssh2tcp client `
   -listen :2222 `
   -server 127.0.0.1:9000 `
   -user tunnel-user `
-  -password tunnel-password
+  -password tunnel-password `
+  -xor 63
 ```
 
 If `-host-key` is omitted, `ssh2tcp client` loads the host key from
 `~/.ssh2tcp/host_key`. If that file does not exist, it generates a new Ed25519
 host key and saves it there. You can still pass `-host-key` to use an explicit
 private key file.
+
+The `-xor` flag is optional. `0` disables it, and values from `1` to `255`
+apply a single-byte XOR to every byte on the middle TCP hop. It adds no
+handshake or negotiation; both `client` and `server` must use the same value.
 
 Then connect through it:
 
