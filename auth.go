@@ -4,7 +4,9 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -54,7 +56,7 @@ func buildInboundSSHServerConfig(user, password, authorizedKeysPath, hostKeyPath
 	return cfg, nil
 }
 
-func buildOutboundSSHClientConfig(user, password, keyPath, knownHostsPath string, insecureHostKey bool, timeout time.Duration) (*ssh.ClientConfig, error) {
+func buildOutboundSSHClientConfig(user, password, keyPath, knownHostsPath, hostKeyFingerprint string, insecureHostKey bool, timeout time.Duration) (*ssh.ClientConfig, error) {
 	var auth []ssh.AuthMethod
 	if password != "" {
 		auth = append(auth, ssh.Password(password))
@@ -70,7 +72,7 @@ func buildOutboundSSHClientConfig(user, password, keyPath, knownHostsPath string
 		return nil, errors.New("server requires at least one outbound auth method: -password or -key")
 	}
 
-	hostKeyCallback, err := buildHostKeyCallback(knownHostsPath, insecureHostKey)
+	hostKeyCallback, err := buildHostKeyCallback(knownHostsPath, hostKeyFingerprint, insecureHostKey)
 	if err != nil {
 		return nil, err
 	}
@@ -83,18 +85,59 @@ func buildOutboundSSHClientConfig(user, password, keyPath, knownHostsPath string
 	}, nil
 }
 
-func buildHostKeyCallback(knownHostsPath string, insecureHostKey bool) (ssh.HostKeyCallback, error) {
+func buildHostKeyCallback(knownHostsPath, hostKeyFingerprint string, insecureHostKey bool) (ssh.HostKeyCallback, error) {
+	hostKeyFingerprint = normalizeFingerprint(hostKeyFingerprint)
+
+	selectedMethods := 0
+	for _, enabled := range []bool{knownHostsPath != "", hostKeyFingerprint != "", insecureHostKey} {
+		if enabled {
+			selectedMethods++
+		}
+	}
+	if selectedMethods > 1 {
+		return nil, errors.New("server requires only one host key verification mode: -known-hosts, -host-key-fingerprint, or -insecure-skip-host-key-check")
+	}
+
+	if hostKeyFingerprint != "" {
+		return trustedFingerprintCallback(hostKeyFingerprint), nil
+	}
 	if insecureHostKey {
 		return ssh.InsecureIgnoreHostKey(), nil
 	}
 	if knownHostsPath == "" {
-		return nil, errors.New("server requires -known-hosts or explicit -insecure-skip-host-key-check")
+		return nil, errors.New("server requires -known-hosts, -host-key-fingerprint, or explicit -insecure-skip-host-key-check")
 	}
 	callback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		return nil, fmt.Errorf("load known_hosts: %w", err)
 	}
 	return callback, nil
+}
+
+func trustedFingerprintCallback(expected string) ssh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		sha256Fingerprint := ssh.FingerprintSHA256(key)
+		md5Fingerprint := ssh.FingerprintLegacyMD5(key)
+		if expected == sha256Fingerprint || expected == md5Fingerprint {
+			return nil
+		}
+		return fmt.Errorf("host key fingerprint mismatch for %s: got %s", hostname, sha256Fingerprint)
+	}
+}
+
+func normalizeFingerprint(fingerprint string) string {
+	fingerprint = strings.TrimSpace(fingerprint)
+	lower := strings.ToLower(fingerprint)
+	switch {
+	case strings.HasPrefix(lower, "sha256:"):
+		return "SHA256:" + fingerprint[len("sha256:"):]
+	case strings.HasPrefix(lower, "md5:"):
+		return "MD5:" + strings.ToLower(fingerprint[len("md5:"):])
+	case fingerprint != "" && !strings.Contains(fingerprint, ":"):
+		return "SHA256:" + fingerprint
+	default:
+		return fingerprint
+	}
 }
 
 func loadPrivateKey(path string) (ssh.Signer, error) {

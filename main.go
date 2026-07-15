@@ -88,7 +88,7 @@ func runServerCommand(args []string) error {
 	fs.SetOutput(os.Stderr)
 
 	var cfg serverConfig
-	var password, keyPath, knownHosts string
+	var password, keyPath, knownHosts, hostKeyFingerprint string
 	var insecureHostKey bool
 	fs.StringVar(&cfg.ListenAddress, "listen", ":9000", "plain ssh2tcp listen address")
 	fs.StringVar(&cfg.TargetAddress, "ssh-target", "", "target SSH server address")
@@ -96,6 +96,7 @@ func runServerCommand(args []string) error {
 	fs.StringVar(&password, "password", "", "password for the target SSH server")
 	fs.StringVar(&keyPath, "key", "", "private key for the target SSH server")
 	fs.StringVar(&knownHosts, "known-hosts", "", "known_hosts file for target host key verification")
+	fs.StringVar(&hostKeyFingerprint, "host-key-fingerprint", "", "trusted target SSH host key fingerprint, for example SHA256:...")
 	fs.BoolVar(&insecureHostKey, "insecure-skip-host-key-check", false, "disable target SSH host key verification")
 	fs.DurationVar(&cfg.ConnectTimeout, "connect-timeout", 10*time.Second, "timeout for connecting to the target SSH server")
 
@@ -109,7 +110,7 @@ func runServerCommand(args []string) error {
 		return errors.New("server requires -ssh-user")
 	}
 
-	sshConfig, err := buildOutboundSSHClientConfig(cfg.TargetUser, password, keyPath, knownHosts, insecureHostKey, cfg.ConnectTimeout)
+	sshConfig, err := buildOutboundSSHClientConfig(cfg.TargetUser, password, keyPath, knownHosts, hostKeyFingerprint, insecureHostKey, cfg.ConnectTimeout)
 	if err != nil {
 		return err
 	}

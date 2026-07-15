@@ -22,6 +22,29 @@ func TestRelaySupportsMultipleChannelsWithPublicKeyAuth(t *testing.T) {
 	runRelayEndToEnd(t, true)
 }
 
+func TestHostKeyCallbackAcceptsTrustedFingerprint(t *testing.T) {
+	signer := testSigner(t)
+	callback, err := buildHostKeyCallback("", ssh.FingerprintSHA256(signer.PublicKey()), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callback("target", nil, signer.PublicKey()); err != nil {
+		t.Fatalf("trusted fingerprint rejected: %v", err)
+	}
+}
+
+func TestHostKeyCallbackRejectsWrongFingerprint(t *testing.T) {
+	signer := testSigner(t)
+	wrongSigner := testSigner(t)
+	callback, err := buildHostKeyCallback("", ssh.FingerprintSHA256(wrongSigner.PublicKey()), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := callback("target", nil, signer.PublicKey()); err == nil {
+		t.Fatal("wrong fingerprint accepted")
+	}
+}
+
 func runRelayEndToEnd(t *testing.T, usePublicKey bool) {
 	t.Helper()
 

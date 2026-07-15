@@ -38,6 +38,18 @@ ssh2tcp server `
   -known-hosts C:\Users\you\.ssh\known_hosts
 ```
 
+You can pin the target SSH host key with a fingerprint instead of a
+`known_hosts` file:
+
+```powershell
+ssh2tcp server `
+  -listen :9000 `
+  -ssh-target 127.0.0.1:22 `
+  -ssh-user target-user `
+  -key C:\Users\you\.ssh\id_ed25519 `
+  -host-key-fingerprint SHA256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
 Start the client side where users connect:
 
 ```powershell
@@ -64,4 +76,3 @@ Go's `golang.org/x/crypto/ssh` package does not expose decrypted raw SSH packet
 bytes. This implementation therefore forwards the SSH connection layer
 semantically instead of promising byte-for-byte SSH transport packet preservation.
 That is the layer where SSH multiplexed channels and global requests live.
-
